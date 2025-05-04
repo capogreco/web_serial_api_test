@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monome Grid Web Serial API</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            padding: 10px 15px;
+            margin: 5px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .button-group {
+            margin: 15px 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        #grid-container {
+            display: grid;
+            grid-template-columns: repeat(16, 30px);
+            grid-template-rows: repeat(8, 30px);
+            gap: 2px;
+            margin-top: 20px;
+        }
+        .grid-cell {
+            width: 30px;
+            height: 30px;
+            background-color: #333;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .grid-cell.active {
+            background-color: #f8d568;
+            box-shadow: 0 0 8px #f8d568;
+        }
+        .section {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        #status {
+            margin: 15px 0;
+            font-weight: bold;
+        }
+        .intensity-control {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+        }
+        .intensity-control label {
+            margin-right: 10px;
+            width: 160px;
+        }
+        .intensity-control input {
+            flex-grow: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Monome Grid Web Serial Control</h1>
+        <p>This page allows you to connect to your monome grid via Web Serial API and control its LEDs with bi-directional communication.</p>
+        
+        <div class="section">
+            <h2>Connection</h2>
+            <div class="button-group">
+                <button id="connect">Connect to Monome Grid</button>
+                <button id="disconnect" disabled>Disconnect</button>
+            </div>
+            <div id="status">Status: Disconnected</div>
+        </div>
+        
+        <div class="section">
+            <h2>Controls</h2>
+            <div class="button-group">
+                <button id="clear-grid" disabled>Clear Grid</button>
+                <button id="fill-grid" disabled>Fill Grid</button>
+                <button id="random-pattern" disabled>Random Pattern</button>
+                <button id="chase-pattern" disabled>Chase Pattern</button>
+                <button id="checkerboard" disabled>Checkerboard</button>
+            </div>
+            
+            <div class="intensity-control">
+                <label for="intensity-slider">Grid Intensity (0-15):</label>
+                <input type="range" id="intensity-slider" min="0" max="15" value="15" disabled>
+                <span id="intensity-value">15</span>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Grid Interface</h2>
+            <p>Click on the cells below to toggle LEDs on your physical grid.</p>
+            <div id="grid-container"></div>
+        </div>
+
+        <p>Please note that Web Serial API will only connect if serialosc is not running.</p> 
+        <p>You can stop serialosc on macOS with:</p> 
+        <code>brew services stop serialosc</code>
+
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

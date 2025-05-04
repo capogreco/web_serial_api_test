@@ -1,0 +1,6 @@
+{
+  "tasks": {
+    "start": "deno run --allow-read --allow-net --unstable-net --watch main.ts",
+    "test": "deno run --allow-read --allow-net --unstable-net grid_test.ts"
+  }
+}
