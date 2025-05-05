@@ -307,55 +307,79 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Setup the serial port reader
+    // Setup the serial port reader in a non-blocking way
     async function setupReader() {
         if (!port) return;
         
-        // Get a reader from the port
         console.log('Setting up reader from port.readable');
         
-        // Read binary data directly without TextDecoderStream
-        // This is more appropriate for a binary protocol like the Monome Serial Protocol
         try {
-            while (port.readable && serialActive) {
-                reader = port.readable.getReader();
-                console.log('Binary reader setup complete, starting read loop');
-                
-                try {
-                    while (serialActive) {
-                        const { value, done } = await reader.read();
-                        
-                        if (done) {
-                            // Reader has been canceled
-                            console.log('Reader done - port closed or canceled');
-                            break;
-                        }
-                        
-                        // Log raw data for debugging
-                        if (value && value.length > 0) {
-                            console.log('Raw data received (binary):', value);
-                            console.log('As hex:', Array.from(value).map(b => b.toString(16).padStart(2, '0')).join(' '));
-                            
-                            // Process the binary data directly
-                            processIncomingData(value);
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error reading from serial port:', error);
-                } finally {
-                    console.log('Reader releasing lock');
-                    reader.releaseLock();
-                }
-                
-                // If we're still active, prepare for the next reader
-                if (serialActive) {
-                    console.log('Reader reset - preparing for new data');
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                }
-            }
+            // Get a reader from the port
+            reader = port.readable.getReader();
+            console.log('Reader setup complete, starting read loop in background');
+            
+            // Start the reading process in the background
+            readInBackground().catch(error => {
+                console.error('Background reading error:', error);
+            });
+            
         } catch (error) {
             console.error('Fatal error setting up reader:', error);
         }
+    }
+    
+    // Function to read data in background using setTimeout to avoid blocking the main thread
+    async function readInBackground() {
+        // Function to perform a single read operation
+        async function performRead() {
+            if (!reader) return false;
+            
+            try {
+                const { value, done } = await reader.read();
+                
+                if (done) {
+                    console.log('Reader done - port closed or canceled');
+                    return false;
+                }
+                
+                // Process the data if we got something
+                if (value && value.length > 0) {
+                    console.log('Raw data received (binary):', value);
+                    console.log('As hex:', Array.from(value).map(b => b.toString(16).padStart(2, '0')).join(' '));
+                    
+                    // Process the binary data
+                    processIncomingData(value);
+                }
+                
+                return true; // Continue reading
+            } catch (error) {
+                console.error('Error reading from serial port:', error);
+                return false; // Stop reading on error
+            }
+        }
+        
+        // Use a recursive setTimeout approach to avoid blocking the main thread
+        function scheduleNextRead() {
+            setTimeout(async () => {
+                if (await performRead() && serialActive) {
+                    // Schedule the next read if we should continue
+                    scheduleNextRead();
+                } else {
+                    // Clean up if we're stopping
+                    if (reader) {
+                        try {
+                            reader.releaseLock();
+                            reader = null;
+                        } catch (error) {
+                            console.error('Error releasing reader:', error);
+                        }
+                    }
+                }
+            }, 10); // Small delay between reads
+        }
+        
+        // Start the reading process
+        scheduleNextRead();
     }
 
     // Process data received from the grid
@@ -627,6 +651,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Disconnect from the grid
     async function disconnectFromGrid() {
+        // Set flag to stop background reading
         serialActive = false;
         
         // Release the writer
@@ -645,11 +670,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (reader) {
             try {
                 reader.cancel();
-                // reader.releaseLock() will be called in the finally block of setupReader
+                // The background reading function will handle releasing the lock
             } catch (error) {
-                console.error('Error releasing reader:', error);
+                console.error('Error canceling reader:', error);
             }
-            reader = null;
         }
         
         // Close the port

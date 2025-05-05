@@ -137,6 +137,70 @@ for (let i = 0; i < borderPositions.length; i++) {
 - **Permission denied**: Try reconnecting your grid or restarting your browser
 - **No response from device**: Check the serial configuration (baud rate, etc.)
 - **No sound**: Click elsewhere on the page first to allow audio context creation
+- **Button presses not detected**: See the "Known Issues and Solutions" section below
+
+## Known Issues and Solutions
+
+### Button Press Detection Issue
+
+**Problem:** The grid buttons may not register when pressed. This issue occurs because the button detection logic depends on a serial read loop that might not start correctly.
+
+**Root cause:** The issue was in the `setupReader()` function, which had a dependency on the `serialActive` flag, but this flag wasn't set to `true` until after the function was called in the connection sequence. This caused the reader to exit prematurely before it could detect any button presses.
+
+**Solution:** The code has been modified to:
+
+1. Start the reader immediately without waiting for the `serialActive` flag
+2. Use a non-blocking approach with `setTimeout` for the reading loop
+3. Only use `serialActive` for determining when to stop the loop, not when to start it
+
+```javascript
+// Non-blocking approach for reading serial data
+async function readInBackground() {
+    // Function to perform a single read operation
+    async function performRead() {
+        if (!reader) return false;
+        
+        try {
+            const { value, done } = await reader.read();
+            
+            if (done) {
+                console.log('Reader done - port closed or canceled');
+                return false;
+            }
+            
+            // Process the data if we got something
+            if (value && value.length > 0) {
+                processIncomingData(value);
+            }
+            
+            return true; // Continue reading
+        } catch (error) {
+            console.error('Error reading from serial port:', error);
+            return false; // Stop reading on error
+        }
+    }
+    
+    // Use setTimeout for non-blocking operation
+    function scheduleNextRead() {
+        setTimeout(async () => {
+            if (await performRead() && serialActive) {
+                scheduleNextRead();
+            } else {
+                // Clean up when stopping
+                if (reader) {
+                    reader.releaseLock();
+                    reader = null;
+                }
+            }
+        }, 10); // Small delay between reads
+    }
+    
+    // Start the reading process
+    scheduleNextRead();
+}
+```
+
+This approach ensures that the reader starts immediately when the serial port is opened, allowing the application to detect button presses from the grid as soon as the connection is established.
 
 ## Browser Compatibility
 
