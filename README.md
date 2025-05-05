@@ -24,13 +24,15 @@ This project demonstrates how to connect to a Monome Grid using the Web Serial A
 
 ## Setup Instructions
 
-1. Connect your Monome Grid to your computer via USB
-2. Host these files on a local web server with
+1. Make sure serialosc not running in the background
+   - on macOS, you can use: `brew services stop serialosc`
+2. Connect your Monome Grid to your computer via USB
+3. Host these files on a local web server with
    - `deno task start`
-3. Open the webpage in a Chrome-based browser
-4. Click the "Connect to Monome Grid" button
-5. Select your Monome Grid from the serial port list (typically shows as a USB Serial device)
-6. Start interacting with the grid!
+4. Open the webpage in a Chrome-based browser
+5. Click the "Connect to Monome Grid" button
+6. Select your Monome Grid from the serial port list (typically shows as a USB Serial device)
+7. Start interacting with the grid!
 
 ## Note
 
