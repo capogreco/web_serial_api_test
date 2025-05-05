@@ -7,6 +7,9 @@ const gridWidth = 16;
 const gridHeight = 8;
 const gridState = Array(gridHeight).fill().map(() => Array(gridWidth).fill(0));
 
+// Web Worker for serial data processing
+let serialWorker;
+
 // Monome Serial Protocol constants
 const PROTOCOL = {
     // System commands
@@ -34,6 +37,9 @@ const PROTOCOL = {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize the Web Worker
+    initWorker();
+    
     // Check if browser supports Serial API
     if (!('serial' in navigator)) {
         alert('Web Serial API is not supported in your browser. Try Chrome or Edge.');
@@ -62,6 +68,90 @@ document.addEventListener('DOMContentLoaded', () => {
             cell.dataset.y = y;
             cell.addEventListener('click', () => toggleGridCell(x, y));
             gridContainer.appendChild(cell);
+        }
+    }
+
+    // Initialize Web Worker
+    function initWorker() {
+        if (window.Worker) {
+            try {
+                // Create a new worker
+                serialWorker = new Worker('serial-worker.js');
+                
+                // Set up message handler for worker responses
+                serialWorker.onmessage = handleWorkerMessage;
+                
+                // Initialize the worker with grid dimensions
+                serialWorker.postMessage({
+                    type: 'INIT',
+                    width: gridWidth,
+                    height: gridHeight
+                });
+                
+                console.log('Web Worker initialized for serial data processing');
+            } catch (error) {
+                console.error('Error initializing Web Worker:', error);
+                // Fallback to non-worker mode if worker fails to initialize
+                serialWorker = null;
+            }
+        } else {
+            console.warn('Web Workers not supported in this browser. Falling back to single-thread mode.');
+            serialWorker = null;
+        }
+    }
+
+    // Handle messages from the Web Worker
+    function handleWorkerMessage(e) {
+        const message = e.data;
+        
+        switch (message.type) {
+            case 'READY':
+                console.log('Serial worker is ready');
+                break;
+                
+            case 'LOG':
+                console.log('Worker says:', message.message);
+                break;
+                
+            case 'PROCESS_RESULT':
+                const result = message.result;
+                
+                // Handle different types of results from the worker
+                switch (result.type) {
+                    case 'KEY_UP':
+                    case 'KEY_DOWN':
+                        handleKeyEvent(result.x, result.y, result.state);
+                        break;
+                        
+                    case 'SYS_QUERY':
+                        if (result.section === 1) { // 1 is led-grid
+                            statusDisplay.textContent = `Status: Connected - Grid with ${result.number} components`;
+                        }
+                        break;
+                        
+                    case 'SYS_ID':
+                        console.log(`Device ID: ${result.deviceId}`);
+                        statusDisplay.textContent = `Status: Connected - ${result.deviceId}`;
+                        break;
+                        
+                    case 'SYS_SIZE':
+                        console.log(`Grid size: ${result.width}x${result.height}`);
+                        break;
+                        
+                    case 'UNKNOWN':
+                        console.log(`Potential key event: type=0x${result.command.toString(16)}, x=${result.x}, y=${result.y}`);
+                        break;
+                        
+                    case 'RAW_DATA':
+                        console.log('Raw data from device:', result.data);
+                        break;
+                }
+                break;
+                
+            case 'GRID_STATE':
+                // Update our local grid state if needed
+                // This is useful for synchronizing state
+                break;
         }
     }
 
@@ -307,82 +397,166 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Setup the serial port reader in a non-blocking way
+    // Setup the serial port reader using Web Workers
     async function setupReader() {
         if (!port) return;
         
         console.log('Setting up reader from port.readable');
         
         try {
+            // Initialize the web worker if not already created
+            if (!window.serialWorker) {
+                initializeSerialWorker();
+            }
+            
             // Get a reader from the port
             reader = port.readable.getReader();
-            console.log('Reader setup complete, starting read loop in background');
+            console.log('Reader setup complete, starting read loop using Web Worker');
             
-            // Start the reading process in the background
-            readInBackground().catch(error => {
-                console.error('Background reading error:', error);
-            });
+            // Start the reading process with requestAnimationFrame for efficiency
+            requestAnimationFrame(readWithRAF);
             
         } catch (error) {
             console.error('Fatal error setting up reader:', error);
         }
     }
     
-    // Function to read data in background using setTimeout to avoid blocking the main thread
-    async function readInBackground() {
-        // Function to perform a single read operation
-        async function performRead() {
-            if (!reader) return false;
-            
-            try {
-                const { value, done } = await reader.read();
+    // Initialize the serial worker
+    function initializeSerialWorker() {
+        try {
+            // Check if we can create a worker
+            if (window.Worker) {
+                // Create worker from our separate worker file
+                window.serialWorker = new Worker('serial-worker.js');
                 
-                if (done) {
-                    console.log('Reader done - port closed or canceled');
-                    return false;
-                }
-                
-                // Process the data if we got something
-                if (value && value.length > 0) {
-                    console.log('Raw data received (binary):', value);
-                    console.log('As hex:', Array.from(value).map(b => b.toString(16).padStart(2, '0')).join(' '));
+                // Set up message handling from the worker
+                window.serialWorker.onmessage = function(e) {
+                    const message = e.data;
                     
-                    // Process the binary data
+                    switch (message.type) {
+                        case 'initialized':
+                            console.log('Serial worker initialized successfully');
+                            break;
+                            
+                        case 'keyEvent':
+                            console.log(`KEY ${message.event.toUpperCase()} at (${message.x},${message.y}) [${message.hexData}]`);
+                            handleKeyEvent(message.x, message.y, message.state);
+                            break;
+                            
+                        case 'systemInfo':
+                            handleSystemInfo(message);
+                            break;
+                            
+                        case 'unknownEvent':
+                        case 'rawData':
+                            console.log(`Worker message: ${JSON.stringify(message)}`);
+                            break;
+                    }
+                };
+                
+                // Initialize the worker with grid dimensions
+                window.serialWorker.postMessage({
+                    type: 'init',
+                    gridWidth: gridWidth,
+                    gridHeight: gridHeight
+                });
+                
+                console.log('Serial worker initialized');
+                return true;
+            } else {
+                console.warn('Web Workers not supported in this browser');
+                return false;
+            }
+        } catch (error) {
+            console.error('Error initializing serial worker:', error);
+            window.serialWorker = null;
+            return false;
+        }
+    }
+    
+    // Handle system info messages from the worker
+    function handleSystemInfo(message) {
+        switch (message.subtype) {
+            case 'query':
+                console.log(`Device section ${message.section} has ${message.number} components`);
+                if (message.section === 1) { // 1 is led-grid
+                    statusDisplay.textContent = `Status: Connected - Grid with ${message.number} components`;
+                }
+                break;
+                
+            case 'deviceId':
+                console.log(`Device ID: ${message.deviceId}`);
+                statusDisplay.textContent = `Status: Connected - ${message.deviceId}`;
+                break;
+                
+            case 'gridSize':
+                console.log(`Grid size: ${message.width}x${message.height}`);
+                break;
+        }
+    }
+    
+    // Function to read data using requestAnimationFrame for better performance
+    function readWithRAF() {
+        // Only continue if we have a reader and are active
+        if (!reader || !serialActive) {
+            // Clean up if we're stopping
+            if (reader) {
+                try {
+                    reader.releaseLock();
+                    reader = null;
+                } catch (error) {
+                    console.error('Error releasing reader:', error);
+                }
+            }
+            return;
+        }
+        
+        // Schedule next read using requestAnimationFrame
+        requestAnimationFrame(readWithRAF);
+        
+        // Perform a read operation if possible
+        reader.read().then(({ value, done }) => {
+            if (done) {
+                console.log('Reader done - port closed or canceled');
+                serialActive = false;
+                return;
+            }
+            
+            // Process the data if we got something
+            if (value && value.length > 0) {
+                // Log basic info about the received data
+                const hexPreview = Array.from(value.slice(0, Math.min(value.length, 10))).map(b => 
+                  `0x${b.toString(16).padStart(2, '0')}`).join(' ') + (value.length > 10 ? '...' : '');
+                console.log(`Received ${value.length} bytes: ${hexPreview}`);
+                
+                // Process the data using the Web Worker if available
+                if (window.serialWorker) {
+                    try {
+                        // Create a copy that can be transferred
+                        const dataCopy = new Uint8Array(value);
+                        
+                        // Send to worker for processing with buffer transfer for efficiency
+                        window.serialWorker.postMessage({
+                            type: 'process',
+                            data: dataCopy
+                        }, [dataCopy.buffer]);
+                    } catch (error) {
+                        console.error('Error sending data to worker:', error);
+                        // Fallback to direct processing
+                        processIncomingData(value);
+                    }
+                } else {
+                    // Fallback to direct processing if worker is not available
                     processIncomingData(value);
                 }
-                
-                return true; // Continue reading
-            } catch (error) {
-                console.error('Error reading from serial port:', error);
-                return false; // Stop reading on error
             }
-        }
-        
-        // Use a recursive setTimeout approach to avoid blocking the main thread
-        function scheduleNextRead() {
-            setTimeout(async () => {
-                if (await performRead() && serialActive) {
-                    // Schedule the next read if we should continue
-                    scheduleNextRead();
-                } else {
-                    // Clean up if we're stopping
-                    if (reader) {
-                        try {
-                            reader.releaseLock();
-                            reader = null;
-                        } catch (error) {
-                            console.error('Error releasing reader:', error);
-                        }
-                    }
-                }
-            }, 10); // Small delay between reads
-        }
-        
-        // Start the reading process
-        scheduleNextRead();
+        }).catch(error => {
+            console.error('Error reading from serial port:', error);
+            serialActive = false;
+        });
     }
 
-    // Process data received from the grid
+    // Process data received from the grid (fallback method if worker is not available)
     function processIncomingData(data) {
         if (!data || data.length < 1) return;
         
@@ -507,6 +681,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // Send the new state to the grid
         await setLED(x, y, gridState[y][x]);
         
+        // Also update the worker's state
+        if (serialWorker) {
+            serialWorker.postMessage({
+                type: 'UPDATE_GRID_STATE',
+                x: x,
+                y: y,
+                state: gridState[y][x]
+            });
+        }
+        
         // Generate tone if turned on
         if (gridState[y][x]) {
             playTone(x, y);
@@ -535,6 +719,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const messageType = state ? PROTOCOL.LED_ON : PROTOCOL.LED_OFF;
             const message = new Uint8Array([messageType, x, y]);
             await writer.write(message);
+            
+            // Update the worker's state
+            if (serialWorker) {
+                serialWorker.postMessage({
+                    type: 'UPDATE_GRID_STATE',
+                    x: x,
+                    y: y,
+                    state: state
+                });
+            }
         } catch (error) {
             console.error('Error sending LED command:', error);
         }
@@ -609,6 +803,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     updateCellUI(x, y, 0);
                 }
             }
+            
+            // Also update worker state
+            if (serialWorker) {
+                // Notify worker that all LEDs are off
+                for (let y = 0; y < gridHeight; y++) {
+                    for (let x = 0; x < gridWidth; x++) {
+                        serialWorker.postMessage({
+                            type: 'UPDATE_GRID_STATE',
+                            x: x,
+                            y: y,
+                            state: 0
+                        });
+                    }
+                }
+            }
         } catch (error) {
             console.error('Error clearing grid:', error);
         }
@@ -628,6 +837,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 for (let x = 0; x < gridWidth; x++) {
                     gridState[y][x] = 1;
                     updateCellUI(x, y, 1);
+                }
+            }
+            
+            // Also update worker state
+            if (serialWorker) {
+                // Notify worker that all LEDs are on
+                for (let y = 0; y < gridHeight; y++) {
+                    for (let x = 0; x < gridWidth; x++) {
+                        serialWorker.postMessage({
+                            type: 'UPDATE_GRID_STATE',
+                            x: x,
+                            y: y,
+                            state: 1
+                        });
+                    }
                 }
             }
         } catch (error) {
@@ -670,7 +894,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (reader) {
             try {
                 reader.cancel();
-                // The background reading function will handle releasing the lock
+                reader.releaseLock();
+                reader = null;
             } catch (error) {
                 console.error('Error canceling reader:', error);
             }
@@ -684,6 +909,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Error closing port:', error);
             }
             port = null;
+        }
+        
+        // Terminate the worker if it exists
+        if (window.serialWorker) {
+            try {
+                // Tell the worker to clean up
+                window.serialWorker.postMessage({ type: 'terminate' });
+                // Terminate the worker
+                window.serialWorker.terminate();
+                console.log('Serial worker terminated');
+                window.serialWorker = null;
+            } catch (error) {
+                console.error('Error terminating worker:', error);
+            }
         }
     }
 

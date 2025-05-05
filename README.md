@@ -202,6 +202,28 @@ async function readInBackground() {
 
 This approach ensures that the reader starts immediately when the serial port is opened, allowing the application to detect button presses from the grid as soon as the connection is established.
 
+### Web Worker Implementation for Serial Data Processing
+
+We've further improved the serial reading implementation by moving the data processing to a Web Worker:
+
+**Problem:** Even with the non-blocking setTimeout approach, processing serial data on the main thread can impact UI performance, especially with high data volumes.
+
+**Solution:** We've implemented a multi-threaded approach:
+
+1. Create a dedicated `serial-worker.js` file that handles all data processing in a separate thread
+2. Use `requestAnimationFrame` instead of `setTimeout` for better performance and timing
+3. Transfer data to the worker using efficient buffer transfers
+4. Process key events and other messages in the worker and send only the results back to the main thread
+
+Benefits of this approach:
+
+1. **Performance:** The main UI thread remains responsive even with high data throughput
+2. **Efficiency:** Using `requestAnimationFrame` synchronizes with the browser's rendering cycle
+3. **Resilience:** Includes fallback to direct processing if the worker initialization fails
+4. **Separation of concerns:** Clear separation between UI handling and data processing logic
+
+This implementation ensures optimal performance while maintaining reliability for button press detection.
+
 ## Browser Compatibility
 
 - Chrome 89 or later
