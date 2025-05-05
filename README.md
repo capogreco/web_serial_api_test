@@ -25,9 +25,8 @@ This project demonstrates how to connect to a Monome Grid using the Web Serial A
 ## Setup Instructions
 
 1. Connect your Monome Grid to your computer via USB
-2. Host these files on a local web server
-   - Python: `python -m http.server` in the project directory
-   - Node.js: Use `serve` or `lite-server`
+2. Host these files on a local web server with
+   - `deno task start`
 3. Open the webpage in a Chrome-based browser
 4. Click the "Connect to Monome Grid" button
 5. Select your Monome Grid from the serial port list (typically shows as a USB Serial device)
